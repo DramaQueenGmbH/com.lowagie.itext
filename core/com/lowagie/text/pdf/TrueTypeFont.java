@@ -648,7 +648,7 @@ class TrueTypeFont extends BaseFont {
             }
             rf.seek(directoryOffset);
             int ttId = rf.readInt();
-            if (ttId != 0x00010000 && ttId != 0x4F54544F)
+            if (ttId != 0x00010000 && ttId != 0x4F54544F && ttId != 0x74727565)
                 throw new DocumentException(fileName + " is not a valid TTF or OTF file.");
             int num_tables = rf.readUnsignedShort();
             rf.skipBytes(6);

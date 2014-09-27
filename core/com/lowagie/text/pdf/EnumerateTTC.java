@@ -90,7 +90,8 @@ class EnumerateTTC extends TrueTypeFont{
                 rf.skipBytes(dirIdx * 4);
                 directoryOffset = rf.readInt();
                 rf.seek(directoryOffset);
-                if (rf.readInt() != 0x00010000)
+                int id = rf.readInt();
+                if (id != 0x00010000 && id != 0x74727565)
                     throw new DocumentException(fileName + " is not a valid TTF file.");
                 int num_tables = rf.readUnsignedShort();
                 rf.skipBytes(6);

@@ -237,7 +237,7 @@ class TrueTypeFontSubSet {
         tableDirectory = new HashMap();
         rf.seek(directoryOffset);
         int id = rf.readInt();
-        if (id != 0x00010000)
+        if (id != 0x00010000 && id != 0x74727565)
             throw new DocumentException(fileName + " is not a true type file.");
         int num_tables = rf.readUnsignedShort();
         rf.skipBytes(6);
