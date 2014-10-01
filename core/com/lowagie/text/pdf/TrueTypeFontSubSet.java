@@ -71,7 +71,7 @@ class TrueTypeFontSubSet {
     static final String tableNamesCmap[] = {"cmap", "cvt ", "fpgm", "glyf", "head",
         "hhea", "hmtx", "loca", "maxp", "prep"};
     static final String tableNamesExtra[] = {"OS/2", "cmap", "cvt ", "fpgm", "glyf", "head",
-        "hhea", "hmtx", "loca", "maxp", "name, prep"};
+        "hhea", "hmtx", "loca", "maxp", "name", "prep"};
     static final int entrySelectors[] = {0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4};
     static final int TABLE_CHECKSUM = 0;
     static final int TABLE_OFFSET = 1;
