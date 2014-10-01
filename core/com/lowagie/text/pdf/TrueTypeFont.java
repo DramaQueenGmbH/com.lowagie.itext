@@ -840,8 +840,13 @@ class TrueTypeFont extends BaseFont {
         if (map31 > 0) {
             rf.seek(table_location[0] + map31);
             int format = rf.readUnsignedShort();
-            if (format == 4) {
-                cmap31 = readFormat4();
+            switch (format) {
+                case 4:
+                    cmap31 = readFormat4();
+                    break;
+                case 10:
+                    cmap31 = readFormat10();
+                    break;
             }
         }
         if (map30 > 0) {
@@ -978,6 +983,29 @@ class TrueTypeFont extends BaseFont {
             r[0] = rf.readUnsignedShort();
             r[1] = getGlyphWidth(r[0]);
             h.put(new Integer(k + start_code), r);
+        }
+        return h;
+    }
+    
+    /** The information in the maps of the table 'cmap' is coded in several formats.
+     *  Format 10 is a trimmed table mapping. It is similar to format 6 but can map
+     *  codes outside the BMP.
+     * @return a <CODE>HashMap</CODE> representing this map
+     * @throws IOException the font file could not be read
+     */
+    HashMap readFormat10() throws IOException {
+        HashMap h = new HashMap();
+        rf.skipBytes(10);
+        int start_code = (int) rf.readInt();
+        int code_count = (int) rf.readInt();
+        for (int k = 0; k < code_count; ++k) {
+            int glyph = rf.readUnsignedShort();
+            if (glyph != 0) {
+                int r[] = new int[2];
+                r[0] = glyph;
+                r[1] = getGlyphWidth(r[0]);
+                h.put(new Integer(k + start_code), r);
+            }
         }
         return h;
     }
