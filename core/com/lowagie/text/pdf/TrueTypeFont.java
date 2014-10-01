@@ -196,6 +196,8 @@ class TrueTypeFont extends BaseFont {
 
     protected HashMap cmapExt;
 
+    protected boolean hasUnicodeCmap = false;
+
     /** The map containing the kerning information. It represents the content of
      * table 'kern'. The key is an <CODE>Integer</CODE> where the top 16 bits
      * are the glyph number for the first character and the lower 16 bits are the
@@ -800,6 +802,7 @@ class TrueTypeFont extends BaseFont {
         rf.skipBytes(2);
         int num_tables = rf.readUnsignedShort();
         fontSpecific = false;
+        int map03 = 0;
         int map10 = 0;
         int map31 = 0;
         int map30 = 0;
@@ -808,19 +811,29 @@ class TrueTypeFont extends BaseFont {
             int platId = rf.readUnsignedShort();
             int platSpecId = rf.readUnsignedShort();
             int offset = rf.readInt();
-            if (platId == 3 && platSpecId == 0) {
-                fontSpecific = true;
-                map30 = offset;
+            switch ((platId << 16) | platSpecId) {
+                case 0x00003: // 0/3
+                    map03 = offset;
+                    break;
+                case 0x10000: // 1/0
+                    map10 = offset;
+                    break;
+                case 0x30000: // 3/0
+                    fontSpecific = true;
+                    map30 = offset;
+                    break;
+                case 0x30001: // 3/1
+                    map31 = offset;
+                    break;
+                case 0x3000a: // 3/10
+                    mapExt = offset;
+                    break;
             }
-            else if (platId == 3 && platSpecId == 1) {
-                map31 = offset;
-            }
-            else if (platId == 3 && platSpecId == 10) {
-                mapExt = offset;
-            }
-            if (platId == 1 && platSpecId == 0) {
-                map10 = offset;
-            }
+        }
+        if (map03 > 0 && map31 == 0) {
+            // 0/3 is essentially the same as 3/1, but it is not supported in PDF
+            map31 = map03;
+            hasUnicodeCmap = true;
         }
         if (map10 > 0) {
             rf.seek(table_location[0] + map10);
@@ -1306,8 +1319,10 @@ class TrueTypeFont extends BaseFont {
                 }
                 addRangeUni(glyphs, false, subsetp);
                 byte[] b = null;
-                if (subsetp || directoryOffset != 0 || subsetRanges != null) {
+                if (subsetp || directoryOffset != 0 || subsetRanges != null || hasUnicodeCmap) {
                     TrueTypeFontSubSet sb = new TrueTypeFontSubSet(fileName, new RandomAccessFileOrArray(rf), glyphs, directoryOffset, true, !subsetp);
+                    if (hasUnicodeCmap)
+                        sb.setCmapToRewrite(cmap31);
                     b = sb.process();
                 }
                 else {

@@ -49,10 +49,13 @@
 
 package com.lowagie.text.pdf;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.ExceptionConverter;
@@ -104,11 +107,14 @@ class TrueTypeFontSubSet {
     protected int newLocaTable[];
     protected byte newLocaTableOut[];
     protected byte newGlyfTable[];
+    protected byte newCmapTable[];
     protected int glyfTableRealSize;
     protected int locaTableRealSize;
+    protected int cmapTableRealSize;
     protected byte outFont[];
     protected int fontPtr;
     protected int directoryOffset;
+    protected HashMap cmapToRewrite;
 
     /** Creates a new TrueTypeFontSubSet
      * @param directoryOffset The offset from the start of the file to the table directory
@@ -125,7 +131,11 @@ class TrueTypeFontSubSet {
         this.directoryOffset = directoryOffset;
         glyphsInList = new ArrayList(glyphsUsed.keySet());
     }
-    
+
+    void setCmapToRewrite(HashMap cmapToRewrite) {
+        this.cmapToRewrite = cmapToRewrite;
+    }
+
     /** Does the actual work of subsetting the font.
      * @throws IOException on error
      * @throws DocumentException on error
@@ -138,6 +148,7 @@ class TrueTypeFontSubSet {
             readLoca();
             flatGlyphs();
             createNewGlyphTables();
+            createNewCmapTable();
             locaTobytes();
             assembleFont();
             return outFont;
@@ -164,11 +175,14 @@ class TrueTypeFontSubSet {
             else
                 tableNames = tableNamesSimple;
         }
+
         int tablesUsed = 2;
         int len = 0;
         for (int k = 0; k < tableNames.length; ++k) {
             String name = tableNames[k];
             if (name.equals("glyf") || name.equals("loca"))
+                continue;
+            if (newCmapTable != null && name.equals("cmap"))
                 continue;
             tableLocation = (int[])tableDirectory.get(name);
             if (tableLocation == null)
@@ -178,6 +192,10 @@ class TrueTypeFontSubSet {
         }
         fullFontSize += newLocaTableOut.length;
         fullFontSize += newGlyfTable.length;
+        if (newCmapTable != null) {
+            tablesUsed++;
+            fullFontSize += newCmapTable.length;
+        }
         int ref = 16 * tablesUsed + 12;
         fullFontSize += ref;
         outFont = new byte[fullFontSize];
@@ -202,6 +220,10 @@ class TrueTypeFontSubSet {
                 writeFontInt(calculateChecksum(newLocaTableOut));
                 len = locaTableRealSize;
             }
+            else if (newCmapTable != null && name.equals("cmap")) {
+                writeFontInt(calculateChecksum(newCmapTable));
+                len = cmapTableRealSize;
+            }
             else {
                 writeFontInt(tableLocation[TABLE_CHECKSUM]);
                 len = tableLocation[TABLE_LENGTH];
@@ -224,6 +246,11 @@ class TrueTypeFontSubSet {
                 System.arraycopy(newLocaTableOut, 0, outFont, fontPtr, newLocaTableOut.length);
                 fontPtr += newLocaTableOut.length;
                 newLocaTableOut = null;
+            }
+            else if (newCmapTable != null && name.equals("cmap")) {
+                System.arraycopy(newCmapTable, 0, outFont, fontPtr, newCmapTable.length);
+                fontPtr += newCmapTable.length;
+                newCmapTable = null;
             }
             else {
                 rf.seek(tableLocation[TABLE_OFFSET]);
@@ -307,7 +334,136 @@ class TrueTypeFontSubSet {
             }
         }
     }
-    
+
+    private void createNewCmapTable() {
+        if ((!includeCmap && !includeExtras) || cmapToRewrite == null || cmapToRewrite.isEmpty())
+            return;
+
+        // prepare the data to write -- for simplicity's sake we always write a format 4 subtable
+
+        // get a sorted character array -- 0xffff must be present in the table
+        HashMap<Integer, int[]> glyphs = (HashMap<Integer, int[]>)cmapToRewrite;
+        boolean hasFFFF = glyphs.containsKey(0xffff);
+        int[] chars = new int[glyphs.size() + (hasFFFF ? 0 : 1)];
+        int index = 0;
+        for (int c : glyphs.keySet())
+            chars[index++] = c;
+        if (!hasFFFF)
+            chars[index] = 0xffff;
+        Arrays.sort(chars);
+
+        // determine segments
+        List<CmapSegment> segments = new ArrayList<CmapSegment>();
+        int previousChar = -2;
+        int previousGlyph = 0;
+        for (int i = 0; i < chars.length; i++) {
+            int[] glyphEntry = glyphs.get(chars[i]);
+            int glyph = glyphEntry != null ? glyphEntry[0] : 0;
+            CmapSegment segment = segments.isEmpty() ? null : segments.get(segments.size() - 1);
+            if (chars[i] > previousChar + 1) {
+                if (!segments.isEmpty())
+                    segment.last = i - 1;
+                segment = new CmapSegment();
+                segment.start = i;
+                segment.firstGlyph = glyph;
+                segments.add(segment);
+            } else if (glyph != previousGlyph + 1)
+                segment.hasConsecutiveGlyphs = false;
+
+            previousChar = chars[i];
+            previousGlyph = glyph;
+        }
+        segments.get(segments.size() - 1).last = chars.length - 1;
+        int segmentCount = segments.size();
+
+        // compute the size of the glyph index table -- we need entries for segments with non-consecutive glyphs
+        int glyphIndexTableSize = 0;
+        for (CmapSegment segment : segments) {
+            if (!segment.hasConsecutiveGlyphs) {
+                segment.glyphIndexOffset = glyphIndexTableSize;
+                glyphIndexTableSize += segment.last - segment.start + 1;
+            }
+        }
+
+        // write the table
+        ByteArrayOutputStream byteArrayOutput = new ByteArrayOutputStream();
+        DataOutputStream output = new DataOutputStream(byteArrayOutput);
+
+        try {
+            // version
+            output.writeShort(0);
+            // numberSubtables
+            output.writeShort(1);
+
+            // platformID
+            output.writeShort(3);
+            // platformSpecificID
+            output.writeShort(1);
+            // offset
+            output.writeInt(byteArrayOutput.size() + 4);
+
+            // format
+            output.writeShort(4);
+            // length
+            int subTableSize = 2 * (8 + 4 * segmentCount + glyphIndexTableSize);
+            output.writeShort(subTableSize);
+            // language
+            output.writeShort(0);
+            // segCountX2
+            output.writeShort(segmentCount * 2);
+            // searchRange
+            int entrySelector = 31 - Integer.numberOfLeadingZeros(segmentCount);
+            int searchRange = 1 << (entrySelector + 1);
+            output.writeShort(searchRange);
+            // entrySelector
+            output.writeShort(entrySelector);
+            // rangeShift
+            output.writeShort(2 * segmentCount - searchRange);
+            // endCode
+            for (int i = 0; i < segmentCount; i++)
+                output.writeShort(chars[segments.get(i).last]);
+            // reservedPad
+            output.writeShort(0);
+            // startCode
+            for (int i = 0; i < segmentCount; i++)
+                output.writeShort(chars[segments.get(i).start]);
+            // idDelta
+            for (int i = 0; i < segmentCount; i++) {
+                CmapSegment segment = segments.get(i);
+                if (segment.hasConsecutiveGlyphs)
+                    output.writeShort((segment.firstGlyph - chars[segment.start]) & 0xffff);
+                else
+                    output.writeShort(0);
+            }
+            // idRangeOffset
+            for (int i = 0; i < segmentCount; i++) {
+                CmapSegment segment = segments.get(i);
+                if (segment.hasConsecutiveGlyphs)
+                    output.writeShort(0);
+                else
+                    output.writeShort((segmentCount - i + segment.glyphIndexOffset) * 2);
+            }
+            // glyphIndexArray
+            for (int i = 0; i < segmentCount; i++) {
+                CmapSegment segment = segments.get(i);
+                if (!segment.hasConsecutiveGlyphs) {
+                    for (int k = segment.start; k <= segment.last; k++) {
+                        int[] glyphEntry = glyphs.get(chars[k]);
+                        output.writeShort(glyphEntry != null ? glyphEntry[0] : 0);
+                    }
+                }
+            }
+
+            cmapTableRealSize = byteArrayOutput.size();
+
+            while ((byteArrayOutput.size() & 0x3) != 0)
+                byteArrayOutput.write(0);
+
+            newCmapTable = byteArrayOutput.toByteArray();
+        } catch (IOException e) {
+        }
+    }
+
     protected void locaTobytes() {
         if (locaShortTable)
             locaTableRealSize = newLocaTable.length * 2;
@@ -424,5 +580,13 @@ class TrueTypeFontSubSet {
             v0 += b[ptr++] & 0xff;
         }
         return v0 + (v1 << 8) + (v2 << 16) + (v3 << 24);
+    }
+
+    private static class CmapSegment {
+        int start;
+        int last;
+        boolean hasConsecutiveGlyphs = true;
+        int glyphIndexOffset;
+        int firstGlyph;
     }
 }
