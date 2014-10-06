@@ -94,7 +94,7 @@ class TrueTypeFontUnicode extends TrueTypeFont implements Comparator{
         if (ttcName.length() < nameBase.length())
             ttcIndex = nameBase.substring(ttcName.length() + 1);
         fontType = FONT_TYPE_TTUNI;
-        if ((fileName.toLowerCase().endsWith(".ttf") || fileName.toLowerCase().endsWith(".otf") || fileName.toLowerCase().endsWith(".ttc")) && ((enc.equals(IDENTITY_H) || enc.equals(IDENTITY_V)) && emb)) {
+        if ((fileName.toLowerCase().endsWith(".ttf") || fileName.toLowerCase().endsWith(".otf") || fileName.toLowerCase().endsWith(".ttc") || fileName.toLowerCase().endsWith(".dfont")) && ((enc.equals(IDENTITY_H) || enc.equals(IDENTITY_V)) && emb)) {
             process(ttfAfm, forceRead);
             if (os_2.fsType == 2)
                 throw new DocumentException(fileName + style + " cannot be embedded due to licensing restrictions.");
@@ -374,7 +374,7 @@ class TrueTypeFontUnicode extends TrueTypeFont implements Comparator{
         } else {
             byte[] b;
             if (subset || directoryOffset != 0) {
-                TrueTypeFontSubSet sb = new TrueTypeFontSubSet(fileName, new RandomAccessFileOrArray(rf), longTag, directoryOffset, false, false);
+                TrueTypeFontSubSet sb = new TrueTypeFontSubSet(fileName, new RandomAccessFileOrArray(rf), longTag, directoryOffset, directoryOffsetRelative, false, false);
                 b = sb.process();
             }
             else {

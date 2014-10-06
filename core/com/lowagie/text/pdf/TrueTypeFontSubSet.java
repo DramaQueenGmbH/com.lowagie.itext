@@ -114,6 +114,7 @@ class TrueTypeFontSubSet {
     protected byte outFont[];
     protected int fontPtr;
     protected int directoryOffset;
+    protected boolean directoryOffsetRelative;
     protected HashMap cmapToRewrite;
 
     /** Creates a new TrueTypeFontSubSet
@@ -122,13 +123,14 @@ class TrueTypeFontSubSet {
      * @param glyphsUsed the glyphs used
      * @param includeCmap <CODE>true</CODE> if the table cmap is to be included in the generated font
      */
-    TrueTypeFontSubSet(String fileName, RandomAccessFileOrArray rf, HashMap glyphsUsed, int directoryOffset, boolean includeCmap, boolean includeExtras) {
+    TrueTypeFontSubSet(String fileName, RandomAccessFileOrArray rf, HashMap glyphsUsed, int directoryOffset, boolean directoryOffsetRelative, boolean includeCmap, boolean includeExtras) {
         this.fileName = fileName;
         this.rf = rf;
         this.glyphsUsed = glyphsUsed;
         this.includeCmap = includeCmap;
         this.includeExtras = includeExtras;
         this.directoryOffset = directoryOffset;
+        this.directoryOffsetRelative = directoryOffsetRelative;
         glyphsInList = new ArrayList(glyphsUsed.keySet());
     }
 
@@ -272,7 +274,7 @@ class TrueTypeFontSubSet {
             String tag = readStandardString(4);
             int tableLocation[] = new int[3];
             tableLocation[TABLE_CHECKSUM] = rf.readInt();
-            tableLocation[TABLE_OFFSET] = rf.readInt();
+            tableLocation[TABLE_OFFSET] = rf.readInt() + (directoryOffsetRelative ? directoryOffset : 0);
             tableLocation[TABLE_LENGTH] = rf.readInt();
             tableDirectory.put(tag, tableLocation);
         }

@@ -55,6 +55,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
@@ -155,10 +157,12 @@ class TrueTypeFont extends BaseFont {
     protected int cffLength;
     
     /** The offset from the start of the file to the table directory.
-     * It is 0 for TTF and may vary for TTC depending on the chosen font.
+     * It is 0 for TTF and may vary for TTC or DFONT depending on the chosen font.
      */    
     protected int directoryOffset;
-    /** The index for the TTC font. It is an empty <CODE>String</CODE> for a
+    /** Indicates whether table offsets are relative to directoryOffset. */
+    protected boolean directoryOffsetRelative = false;
+    /** The index for the TTC or DFONT font. It is an empty <CODE>String</CODE> for a
      * TTF file.
      */    
     protected String ttcIndex;
@@ -373,7 +377,7 @@ class TrueTypeFont extends BaseFont {
         ttcIndex = "";
         if (ttcName.length() < nameBase.length())
             ttcIndex = nameBase.substring(ttcName.length() + 1);
-        if (fileName.toLowerCase().endsWith(".ttf") || fileName.toLowerCase().endsWith(".otf") || fileName.toLowerCase().endsWith(".ttc")) {
+        if (fileName.toLowerCase().endsWith(".ttf") || fileName.toLowerCase().endsWith(".otf") || fileName.toLowerCase().endsWith(".ttc") || fileName.toLowerCase().endsWith(".dfont")) {
             process(ttfAfm, forceRead);
             if (!justNames && embedded && os_2.fsType == 2)
                 throw new DocumentException(fileName + style + " cannot be embedded due to licensing restrictions.");
@@ -385,18 +389,20 @@ class TrueTypeFont extends BaseFont {
         createEncoding();
     }
     
-    /** Gets the name from a composed TTC file name.
+    /** Gets the name from a composed TTC or DFONT file name.
      * If I have for input "myfont.ttc,2" the return will
      * be "myfont.ttc".
      * @param name the full name
      * @return the simple file name
      */    
     protected static String getTTCName(String name) {
-        int idx = name.toLowerCase().indexOf(".ttc,");
-        if (idx < 0)
-            return name;
-        else
-            return name.substring(0, idx + 4);
+        for (String extension : new String[]{".ttc", ".dfont"}) {
+            int idx = name.toLowerCase().indexOf(extension + ',');
+            if (idx >= 0)
+                return name.substring(0, idx + extension.length());
+        }
+
+        return name;
     }
     
     
@@ -620,6 +626,80 @@ class TrueTypeFont extends BaseFont {
         }
     }
 
+    private int getDfontOffset(int index) throws IOException, DocumentException {
+        rf.seek(0);
+
+        // read the header
+        int resourcesOffset = rf.readInt();
+        int mapOffset = rf.readInt();
+        int resourcesLength = rf.readInt();
+        int mapLength = rf.readInt();
+
+        int fileLength = rf.length();
+        if (resourcesOffset < 0 || resourcesLength < 0 || mapOffset < 0 || mapLength < 0
+                || resourcesOffset + resourcesLength > fileLength || mapOffset + mapLength > fileLength) {
+            throw new DocumentException(fileName + " is not a valid DFONT file.");
+        }
+
+        // parse the map
+        rf.seek(mapOffset);
+        rf.skipBytes(16 // copy of resource header
+                + 4     // handle to next resource map
+                + 2     // file reference number
+                + 2);   // resource fork attributes
+        int typeListOffset = rf.readUnsignedShort();
+
+        // read type list
+        rf.seek(mapOffset + typeListOffset);
+
+        int typeCount = rf.readUnsignedShort() + 1;
+
+        int sfntCount = 0;
+        int sfntOffset = 0;
+
+        for (int i = 0; i < typeCount; i++) {
+            int type = rf.readInt();
+            int count = rf.readUnsignedShort() + 1;
+            int offset = rf.readUnsignedShort();
+
+            // 'sfnt'
+            if (type == 0x73666e74) {
+                sfntCount = count;
+                sfntOffset = offset;
+                break;
+            }
+        }
+
+        if (sfntCount == 0) {
+            throw new DocumentException(fileName + " doesn't have 'sfnt' resources.");
+        }
+
+        if (index >= sfntCount) {
+            throw new DocumentException("The font index for " + fileName + " must be between 0 and " + (sfntCount - 1) + ". It was " + index + ".");
+        }
+
+        // Since the index is supposed to be interpreted as an index into the table sorted by resource ID, we have to read all reference entries.
+        SortedMap<Integer, Integer> offsetMap = new TreeMap<Integer, Integer>();
+        for (int i = 0; i < sfntCount; i++) {
+            rf.seek(mapOffset + typeListOffset + sfntOffset + 12 * i);
+            int id = rf.readUnsignedShort();
+            rf.skipBytes(2  // name offset
+                    + 1);   // attributes
+            
+            int offset = (rf.readUnsignedByte() << 16) + (rf.readUnsignedByte() << 8) + rf.readUnsignedByte();
+            offsetMap.put(id, offset);
+        }
+
+        for (int offset : offsetMap.values()) {
+            if (index-- == 0) {
+                // offset points into the resources, to a 4 byte field (the length of the resources), followed by the actual data
+                return resourcesOffset + offset + 4;
+            }
+        }
+
+        throw new RuntimeException("should not get here");
+    }
+
     /** Reads the font data.
      * @param ttfAfm the font as a <CODE>byte</CODE> array, possibly <CODE>null</CODE>
      * @throws DocumentException the font is invalid
@@ -638,15 +718,22 @@ class TrueTypeFont extends BaseFont {
                 int dirIdx = Integer.parseInt(ttcIndex);
                 if (dirIdx < 0)
                     throw new DocumentException("The font index for " + fileName + " must be positive.");
-                String mainTag = readStandardString(4);
-                if (!mainTag.equals("ttcf"))
-                    throw new DocumentException(fileName + " is not a valid TTC file.");
-                rf.skipBytes(4);
-                int dirCount = rf.readInt();
-                if (dirIdx >= dirCount)
-                    throw new DocumentException("The font index for " + fileName + " must be between 0 and " + (dirCount - 1) + ". It was " + dirIdx + ".");
-                rf.skipBytes(dirIdx * 4);
-                directoryOffset = rf.readInt();
+
+                if (fileName.endsWith(".ttc")) {
+                    String mainTag = readStandardString(4);
+                    if (!mainTag.equals("ttcf"))
+                        throw new DocumentException(fileName + " is not a valid TTC file.");
+                    rf.skipBytes(4);
+                    int dirCount = rf.readInt();
+                    if (dirIdx >= dirCount)
+                        throw new DocumentException("The font index for " + fileName + " must be between 0 and " + (dirCount - 1) + ". It was " + dirIdx + ".");
+                    rf.skipBytes(dirIdx * 4);
+                    directoryOffset = rf.readInt();
+                }
+                else {
+                    directoryOffset = getDfontOffset(dirIdx);
+                    directoryOffsetRelative = true;
+                }
             }
             rf.seek(directoryOffset);
             int ttId = rf.readInt();
@@ -658,7 +745,7 @@ class TrueTypeFont extends BaseFont {
                 String tag = readStandardString(4);
                 rf.skipBytes(4);
                 int table_location[] = new int[2];
-                table_location[0] = rf.readInt();
+                table_location[0] = rf.readInt() + (directoryOffsetRelative ? directoryOffset : 0);
                 table_location[1] = rf.readInt();
                 tables.put(tag, table_location);
             }
@@ -1320,7 +1407,7 @@ class TrueTypeFont extends BaseFont {
                 addRangeUni(glyphs, false, subsetp);
                 byte[] b = null;
                 if (subsetp || directoryOffset != 0 || subsetRanges != null || hasUnicodeCmap) {
-                    TrueTypeFontSubSet sb = new TrueTypeFontSubSet(fileName, new RandomAccessFileOrArray(rf), glyphs, directoryOffset, true, !subsetp);
+                    TrueTypeFontSubSet sb = new TrueTypeFontSubSet(fileName, new RandomAccessFileOrArray(rf), glyphs, directoryOffset, directoryOffsetRelative, true, !subsetp);
                     if (hasUnicodeCmap)
                         sb.setCmapToRewrite(cmap31);
                     b = sb.process();

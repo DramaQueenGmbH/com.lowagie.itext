@@ -680,7 +680,7 @@ public abstract class BaseFont {
             fontBuilt = new Type1Font(name, encoding, embedded, ttfAfm, pfb, forceRead);
             fontBuilt.fastWinansi = encoding.equals(CP1252);
         }
-        else if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0) {
+        else if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0 || nameBase.toLowerCase().indexOf(".dfont,") > 0) {
             if (encoding.equals(IDENTITY_H) || encoding.equals(IDENTITY_V))
                 fontBuilt = new TrueTypeFontUnicode(name, encoding, embedded, ttfAfm, forceRead);
             else {
@@ -1170,7 +1170,7 @@ public abstract class BaseFont {
     public static String[][] getFullFontName(String name, String encoding, byte ttfAfm[]) throws DocumentException, IOException {
         String nameBase = getBaseName(name);
         BaseFont fontBuilt = null;
-        if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0)
+        if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0 || nameBase.toLowerCase().indexOf(".dfont,") > 0)
             fontBuilt = new TrueTypeFont(name, CP1252, false, ttfAfm, true, false);
         else
             fontBuilt = createFont(name, encoding, false, false, ttfAfm, null);
@@ -1188,7 +1188,7 @@ public abstract class BaseFont {
     public static Object[] getAllFontNames(String name, String encoding, byte ttfAfm[]) throws DocumentException, IOException {
         String nameBase = getBaseName(name);
         BaseFont fontBuilt = null;
-        if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0)
+        if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0 || nameBase.toLowerCase().indexOf(".dfont,") > 0)
             fontBuilt = new TrueTypeFont(name, CP1252, false, ttfAfm, true, false);
         else
             fontBuilt = createFont(name, encoding, false, false, ttfAfm, null);
@@ -1207,7 +1207,7 @@ public abstract class BaseFont {
     public static String[][] getAllNameEntries(String name, String encoding, byte ttfAfm[]) throws DocumentException, IOException {
         String nameBase = getBaseName(name);
         BaseFont fontBuilt = null;
-        if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0)
+        if (nameBase.toLowerCase().endsWith(".ttf") || nameBase.toLowerCase().endsWith(".otf") || nameBase.toLowerCase().indexOf(".ttc,") > 0 || nameBase.toLowerCase().indexOf(".dfont,") > 0)
             fontBuilt = new TrueTypeFont(name, CP1252, false, ttfAfm, true, false);
         else
             fontBuilt = createFont(name, encoding, false, false, ttfAfm, null);
