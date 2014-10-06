@@ -96,7 +96,7 @@ class TrueTypeFontUnicode extends TrueTypeFont implements Comparator{
         fontType = FONT_TYPE_TTUNI;
         if ((fileName.toLowerCase().endsWith(".ttf") || fileName.toLowerCase().endsWith(".otf") || fileName.toLowerCase().endsWith(".ttc") || fileName.toLowerCase().endsWith(".dfont")) && ((enc.equals(IDENTITY_H) || enc.equals(IDENTITY_V)) && emb)) {
             process(ttfAfm, forceRead);
-            if (os_2.fsType == 2)
+            if (os_2 != null && os_2.fsType == 2)
                 throw new DocumentException(fileName + style + " cannot be embedded due to licensing restrictions.");
             // Sivan
             if ((cmap31 == null && !fontSpecific) || (cmap10 == null && fontSpecific))

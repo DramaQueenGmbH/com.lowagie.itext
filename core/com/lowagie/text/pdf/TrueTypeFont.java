@@ -379,7 +379,7 @@ class TrueTypeFont extends BaseFont {
             ttcIndex = nameBase.substring(ttcName.length() + 1);
         if (fileName.toLowerCase().endsWith(".ttf") || fileName.toLowerCase().endsWith(".otf") || fileName.toLowerCase().endsWith(".ttc") || fileName.toLowerCase().endsWith(".dfont")) {
             process(ttfAfm, forceRead);
-            if (!justNames && embedded && os_2.fsType == 2)
+            if (!justNames && embedded && os_2 != null && os_2.fsType == 2)
                 throw new DocumentException(fileName + style + " cannot be embedded due to licensing restrictions.");
         }
         else
@@ -443,50 +443,53 @@ class TrueTypeFont extends BaseFont {
         hhea.numberOfHMetrics = rf.readUnsignedShort();
         
         table_location = (int[])tables.get("OS/2");
-        if (table_location == null)
-            throw new DocumentException("Table 'OS/2' does not exist in " + fileName + style);
-        rf.seek(table_location[0]);
-        int version = rf.readUnsignedShort();
-        os_2.xAvgCharWidth = rf.readShort();
-        os_2.usWeightClass = rf.readUnsignedShort();
-        os_2.usWidthClass = rf.readUnsignedShort();
-        os_2.fsType = rf.readShort();
-        os_2.ySubscriptXSize = rf.readShort();
-        os_2.ySubscriptYSize = rf.readShort();
-        os_2.ySubscriptXOffset = rf.readShort();
-        os_2.ySubscriptYOffset = rf.readShort();
-        os_2.ySuperscriptXSize = rf.readShort();
-        os_2.ySuperscriptYSize = rf.readShort();
-        os_2.ySuperscriptXOffset = rf.readShort();
-        os_2.ySuperscriptYOffset = rf.readShort();
-        os_2.yStrikeoutSize = rf.readShort();
-        os_2.yStrikeoutPosition = rf.readShort();
-        os_2.sFamilyClass = rf.readShort();
-        rf.readFully(os_2.panose);
-        rf.skipBytes(16);
-        rf.readFully(os_2.achVendID);
-        os_2.fsSelection = rf.readUnsignedShort();
-        os_2.usFirstCharIndex = rf.readUnsignedShort();
-        os_2.usLastCharIndex = rf.readUnsignedShort();
-        os_2.sTypoAscender = rf.readShort();
-        os_2.sTypoDescender = rf.readShort();
-        if (os_2.sTypoDescender > 0)
-            os_2.sTypoDescender = (short)(-os_2.sTypoDescender);
-        os_2.sTypoLineGap = rf.readShort();
-        os_2.usWinAscent = rf.readUnsignedShort();
-        os_2.usWinDescent = rf.readUnsignedShort();
-        os_2.ulCodePageRange1 = 0;
-        os_2.ulCodePageRange2 = 0;
-        if (version > 0) {
-            os_2.ulCodePageRange1 = rf.readInt();
-            os_2.ulCodePageRange2 = rf.readInt();
+        if (table_location != null) {
+            rf.seek(table_location[0]);
+            int version = rf.readUnsignedShort();
+            os_2.xAvgCharWidth = rf.readShort();
+            os_2.usWeightClass = rf.readUnsignedShort();
+            os_2.usWidthClass = rf.readUnsignedShort();
+            os_2.fsType = rf.readShort();
+            os_2.ySubscriptXSize = rf.readShort();
+            os_2.ySubscriptYSize = rf.readShort();
+            os_2.ySubscriptXOffset = rf.readShort();
+            os_2.ySubscriptYOffset = rf.readShort();
+            os_2.ySuperscriptXSize = rf.readShort();
+            os_2.ySuperscriptYSize = rf.readShort();
+            os_2.ySuperscriptXOffset = rf.readShort();
+            os_2.ySuperscriptYOffset = rf.readShort();
+            os_2.yStrikeoutSize = rf.readShort();
+            os_2.yStrikeoutPosition = rf.readShort();
+            os_2.sFamilyClass = rf.readShort();
+            rf.readFully(os_2.panose);
+            rf.skipBytes(16);
+            rf.readFully(os_2.achVendID);
+            os_2.fsSelection = rf.readUnsignedShort();
+            os_2.usFirstCharIndex = rf.readUnsignedShort();
+            os_2.usLastCharIndex = rf.readUnsignedShort();
+            os_2.sTypoAscender = rf.readShort();
+            os_2.sTypoDescender = rf.readShort();
+            if (os_2.sTypoDescender > 0)
+                os_2.sTypoDescender = (short)(-os_2.sTypoDescender);
+            os_2.sTypoLineGap = rf.readShort();
+            os_2.usWinAscent = rf.readUnsignedShort();
+            os_2.usWinDescent = rf.readUnsignedShort();
+            os_2.ulCodePageRange1 = 0;
+            os_2.ulCodePageRange2 = 0;
+            if (version > 0) {
+                os_2.ulCodePageRange1 = rf.readInt();
+                os_2.ulCodePageRange2 = rf.readInt();
+            }
+            if (version > 1) {
+                rf.skipBytes(2);
+                os_2.sCapHeight = rf.readShort();
+            }
+            else
+                os_2.sCapHeight = (int)(0.7 * head.unitsPerEm);
         }
-        if (version > 1) {
-            rf.skipBytes(2);
-            os_2.sCapHeight = rf.readShort();
+        else {
+            os_2 = null;
         }
-        else
-            os_2.sCapHeight = (int)(0.7 * head.unitsPerEm);
         
         table_location = (int[])tables.get("post");
         if (table_location == null) {
@@ -1177,9 +1180,17 @@ class TrueTypeFont extends BaseFont {
      */
     protected PdfDictionary getFontDescriptor(PdfIndirectReference fontStream, String subsetPrefix, PdfIndirectReference cidset) {
         PdfDictionary dic = new PdfDictionary(PdfName.FONTDESCRIPTOR);
-        dic.put(PdfName.ASCENT, new PdfNumber(os_2.sTypoAscender * 1000 / head.unitsPerEm));
-        dic.put(PdfName.CAPHEIGHT, new PdfNumber(os_2.sCapHeight * 1000 / head.unitsPerEm));
-        dic.put(PdfName.DESCENT, new PdfNumber(os_2.sTypoDescender * 1000 / head.unitsPerEm));
+        if (os_2 != null) {
+            dic.put(PdfName.ASCENT, new PdfNumber(os_2.sTypoAscender * 1000 / head.unitsPerEm));
+            dic.put(PdfName.CAPHEIGHT, new PdfNumber(os_2.sCapHeight * 1000 / head.unitsPerEm));
+            dic.put(PdfName.DESCENT, new PdfNumber(os_2.sTypoDescender * 1000 / head.unitsPerEm));
+        }
+        else {
+            dic.put(PdfName.ASCENT, new PdfNumber(hhea.Ascender * 1000 / head.unitsPerEm));
+            // no similar field in hhea
+            dic.put(PdfName.CAPHEIGHT, new PdfNumber(hhea.Ascender * 1000 / head.unitsPerEm));
+            dic.put(PdfName.DESCENT, new PdfNumber(hhea.Descender * 1000 / head.unitsPerEm));
+        }
         dic.put(PdfName.FONTBBOX, new PdfRectangle(
         head.xMin * 1000 / head.unitsPerEm,
         head.yMin * 1000 / head.unitsPerEm,
@@ -1482,11 +1493,18 @@ class TrueTypeFont extends BaseFont {
     public float getFontDescriptor(int key, float fontSize) {
         switch (key) {
             case ASCENT:
-                return os_2.sTypoAscender * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.sTypoAscender * fontSize / head.unitsPerEm;
+                return hhea.Ascender * fontSize / head.unitsPerEm;
             case CAPHEIGHT:
-                return os_2.sCapHeight * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.sCapHeight * fontSize / head.unitsPerEm;
+                // no similar field in hhea
+                return hhea.Ascender * fontSize / head.unitsPerEm;
             case DESCENT:
-                return os_2.sTypoDescender * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.sTypoDescender * fontSize / head.unitsPerEm;
+                return hhea.Descender * fontSize / head.unitsPerEm;
             case ITALICANGLE:
                 return (float)italicAngle;
             case BBOXLLX:
@@ -1510,17 +1528,29 @@ class TrueTypeFont extends BaseFont {
             case UNDERLINE_THICKNESS:
                 return underlineThickness * fontSize / head.unitsPerEm;
             case STRIKETHROUGH_POSITION:
-                return os_2.yStrikeoutPosition * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.yStrikeoutPosition * fontSize / head.unitsPerEm;
+                break;
             case STRIKETHROUGH_THICKNESS:
-                return os_2.yStrikeoutSize * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.yStrikeoutSize * fontSize / head.unitsPerEm;
+                break;
             case SUBSCRIPT_SIZE:
-                return os_2.ySubscriptYSize * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.ySubscriptYSize * fontSize / head.unitsPerEm;
+                break;
             case SUBSCRIPT_OFFSET:
-                return -os_2.ySubscriptYOffset * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return -os_2.ySubscriptYOffset * fontSize / head.unitsPerEm;
+                break;
             case SUPERSCRIPT_SIZE:
-                return os_2.ySuperscriptYSize * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.ySuperscriptYSize * fontSize / head.unitsPerEm;
+                break;
             case SUPERSCRIPT_OFFSET:
-                return os_2.ySuperscriptYOffset * fontSize / head.unitsPerEm;
+                if (os_2 != null)
+                    return os_2.ySuperscriptYOffset * fontSize / head.unitsPerEm;
+                break;
         }
         return 0;
     }
@@ -1554,6 +1584,9 @@ class TrueTypeFont extends BaseFont {
      * @return the code pages supported by the font
      */
     public String[] getCodePagesSupported() {
+        if (os_2 == null)
+            return new String[0];
+
         long cp = (((long)os_2.ulCodePageRange2) << 32) + (os_2.ulCodePageRange1 & 0xffffffffL);
         int count = 0;
         long bit = 1;
