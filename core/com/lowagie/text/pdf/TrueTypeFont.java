@@ -52,8 +52,11 @@ package com.lowagie.text.pdf;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -183,24 +186,19 @@ class TrueTypeFont extends BaseFont {
     protected int GlyphWidths[];
     
     protected int bboxes[][];
-    /** The map containing the code information for the table 'cmap', encoding 1.0.
+
+    /** The map containing the code information for the table 'cmap'.
      * The key is the code and the value is an <CODE>int[2]</CODE> where position 0
      * is the glyph number and position 1 is the glyph width normalized to 1000
      * units.
      */
-    protected HashMap cmap10;
-    /** The map containing the code information for the table 'cmap', encoding 3.1
-     * in Unicode.
-     * <P>
-     * The key is the code and the value is an <CODE>int</CODE>[2] where position 0
-     * is the glyph number and position 1 is the glyph width normalized to 1000
-     * units.
-     */
-    protected HashMap cmap31;
+    protected HashMap cmap;
 
-    protected HashMap cmapExt;
-
+    /** Indicates whether the cmap subtable has platform ID Unicode (0). PDF readers may not like those. */
     protected boolean hasUnicodeCmap = false;
+
+    /** Indicates whether the cmap subtable has platform ID Macintosh (1). */
+    protected boolean hasMacintoshCmap = false;
 
     /** The map containing the kerning information. It represents the content of
      * table 'kern'. The key is an <CODE>Integer</CODE> where the top 16 bits
@@ -877,7 +875,7 @@ class TrueTypeFont extends BaseFont {
             }
         }
     }
-    
+
     /** Reads the several maps from the table 'cmap'. The maps of interest are 1.0 for symbolic
      *  fonts and 3.1 for all others. A symbolic font is defined as having the map 3.0.
      * @throws DocumentException the font is invalid
@@ -892,95 +890,76 @@ class TrueTypeFont extends BaseFont {
         rf.skipBytes(2);
         int num_tables = rf.readUnsignedShort();
         fontSpecific = false;
-        int map03 = 0;
-        int map10 = 0;
-        int map31 = 0;
-        int map30 = 0;
-        int mapExt = 0;
+
+        List<CMapSubtable> subtables = new ArrayList<TrueTypeFont.CMapSubtable>();
+
         for (int k = 0; k < num_tables; ++k) {
             int platId = rf.readUnsignedShort();
             int platSpecId = rf.readUnsignedShort();
             int offset = rf.readInt();
+            int priority = 0;
             switch ((platId << 16) | platSpecId) {
+                case 0x00004: // 0/4
+                    priority++;
                 case 0x00003: // 0/3
-                    map03 = offset;
-                    break;
-                case 0x10000: // 1/0
-                    map10 = offset;
-                    break;
-                case 0x30000: // 3/0
-                    fontSpecific = true;
-                    map30 = offset;
-                    break;
-                case 0x30001: // 3/1
-                    map31 = offset;
-                    break;
+                    priority++;
+                case 0x00002: // 0/2
+                    priority++;
+                case 0x00001: // 0/1
+                    priority++;
+                case 0x00000: // 0/0
+                    priority++;
                 case 0x3000a: // 3/10
-                    mapExt = offset;
+                    priority++;
+                case 0x30001: // 3/1
+                    priority++;
+                case 0x30000: // 3/0
+                    priority++;
+                case 0x10000: // 1/0
+                    priority++;
+                    subtables.add(new CMapSubtable(platId, platSpecId, offset, priority));
+                    break;
+                default:
                     break;
             }
         }
-        if (map03 > 0 && map31 == 0) {
-            // 0/3 is essentially the same as 3/1, but it is not supported in PDF
-            map31 = map03;
-            hasUnicodeCmap = true;
-        }
-        if (map10 > 0) {
-            rf.seek(table_location[0] + map10);
+
+        // sort the subtables in descending order of preference
+        Collections.sort(subtables, new Comparator<CMapSubtable>() {
+            public int compare(CMapSubtable a, CMapSubtable b) {
+                return b.priority - a.priority;
+            }
+        });
+
+        // read the first subtable whose format we support
+        for (CMapSubtable subtable : subtables) {
+            rf.seek(table_location[0] + subtable.offset);
+            boolean symbols = subtable.platformId == 3 && subtable.platformSpecificId == 0;
             int format = rf.readUnsignedShort();
             switch (format) {
                 case 0:
-                    cmap10 = readFormat0();
+                    cmap = readFormat0();
                     break;
                 case 4:
-                    cmap10 = readFormat4();
+                    cmap = readFormat4(symbols);
                     break;
                 case 6:
-                    cmap10 = readFormat6();
-                    break;
-            }
-        }
-        if (map31 > 0) {
-            rf.seek(table_location[0] + map31);
-            int format = rf.readUnsignedShort();
-            switch (format) {
-                case 4:
-                    cmap31 = readFormat4();
-                    break;
-                case 6:
-                    cmap31 = readFormat6();
+                    cmap = readFormat6();
                     break;
                 case 10:
-                    cmap31 = readFormat10();
+                    cmap = readFormat10();
                     break;
                 case 12:
-                    cmap31 = readFormat12();
+                    cmap = readFormat12();
                     break;
             }
-        }
-        if (map30 > 0) {
-            rf.seek(table_location[0] + map30);
-            int format = rf.readUnsignedShort();
-            if (format == 4) {
-                cmap10 = readFormat4();
-            }
-        }
-        if (mapExt > 0) {
-            rf.seek(table_location[0] + mapExt);
-            int format = rf.readUnsignedShort();
-            switch (format) {
-                case 0:
-                    cmapExt = readFormat0();
-                    break;
-                case 4:
-                    cmapExt = readFormat4();
-                    break;
-                case 6:
-                    cmapExt = readFormat6();
-                    break;
-                case 12:
-                    cmapExt = readFormat12();
-                    break;
+            // TODO: In case of pre 0/3 subtables we need to do some remapping according to the older Unicode standard used.
+
+            if (cmap != null) {
+                fontSpecific = symbols;
+                hasUnicodeCmap = subtable.platformId == 0;
+                hasMacintoshCmap = subtable.platformId == 1 && subtable.platformSpecificId == 0;
+                break;
             }
         }
     }
@@ -1025,10 +1004,11 @@ class TrueTypeFont extends BaseFont {
     
     /** The information in the maps of the table 'cmap' is coded in several formats.
      *  Format 4 is the Microsoft standard character to glyph index mapping table.
+     * @param symbols Indicates whether this is a table for a symbolic font.
      * @return a <CODE>HashMap</CODE> representing this map
      * @throws IOException the font file could not be read
      */
-    HashMap readFormat4() throws IOException {
+    HashMap readFormat4(boolean symbols) throws IOException {
         HashMap h = new HashMap();
         int table_lenght = rf.readUnsignedShort();
         rf.skipBytes(2);
@@ -1070,7 +1050,7 @@ class TrueTypeFont extends BaseFont {
                 int r[] = new int[2];
                 r[0] = glyph;
                 r[1] = getGlyphWidth(r[0]);
-                h.put(new Integer(fontSpecific ? ((j & 0xff00) == 0xf000 ? j & 0xff : j) : j), r);
+                h.put(new Integer(symbols ? ((j & 0xff00) == 0xf000 ? j & 0xff : j) : j), r);
             }
         }
         return h;
@@ -1341,16 +1321,7 @@ class TrueTypeFont extends BaseFont {
     protected void addRangeUni(HashMap longTag, boolean includeMetrics, boolean subsetp) {
         if (!subsetp && (subsetRanges != null || directoryOffset > 0)) {
             int[] rg = (subsetRanges == null && directoryOffset > 0) ? new int[]{0, 0xffff} : compactRanges(subsetRanges);
-            HashMap usemap;
-            if (!fontSpecific && cmap31 != null) 
-                usemap = cmap31;
-            else if (fontSpecific && cmap10 != null) 
-                usemap = cmap10;
-            else if (cmap31 != null) 
-                usemap = cmap31;
-            else 
-                usemap = cmap10;
-            for (Iterator it = usemap.entrySet().iterator(); it.hasNext();) {
+            for (Iterator it = cmap.entrySet().iterator(); it.hasNext();) {
                 Map.Entry e = (Map.Entry)it.next();
                 int[] v = (int[])e.getValue();
                 Integer gi = new Integer(v[0]);
@@ -1426,7 +1397,7 @@ class TrueTypeFont extends BaseFont {
                 if (subsetp || directoryOffset != 0 || subsetRanges != null || hasUnicodeCmap) {
                     TrueTypeFontSubSet sb = new TrueTypeFontSubSet(fileName, new RandomAccessFileOrArray(rf), glyphs, directoryOffset, directoryOffsetRelative, true, !subsetp);
                     if (hasUnicodeCmap)
-                        sb.setCmapToRewrite(cmap31);
+                        sb.setCmapToRewrite(cmap);
                     b = sb.process();
                 }
                 else {
@@ -1566,16 +1537,8 @@ class TrueTypeFont extends BaseFont {
      * @return an <CODE>int</CODE> array with {glyph index, width}
      */    
     public int[] getMetricsTT(int c) {
-        if (cmapExt != null)
-            return (int[])cmapExt.get(new Integer(c));
-        if (!fontSpecific && cmap31 != null) 
-            return (int[])cmap31.get(new Integer(c));
-        if (fontSpecific && cmap10 != null) 
-            return (int[])cmap10.get(new Integer(c));
-        if (cmap31 != null) 
-            return (int[])cmap31.get(new Integer(c));
-        if (cmap10 != null) 
-            return (int[])cmap10.get(new Integer(c));
+        if (cmap != null)
+            return (int[])cmap.get(new Integer(c));
         return null;
     }
 
@@ -1685,16 +1648,25 @@ class TrueTypeFont extends BaseFont {
     }
     
     protected int[] getRawCharBBox(int c, String name) {
-        HashMap map = null;
-        if (name == null || cmap31 == null)
-            map = cmap10;
-        else
-            map = cmap31;
-        if (map == null)
+        if (cmap == null)
             return null;
-        int metric[] = (int[])map.get(new Integer(c));
+        int metric[] = (int[])cmap.get(new Integer(c));
         if (metric == null || bboxes == null)
             return null;
         return bboxes[metric[0]];
+    }
+
+    private static class CMapSubtable {
+        private int platformId;
+        private int platformSpecificId;
+        private int offset;
+        private int priority;
+
+        private CMapSubtable(int platformId, int platformSpecificId, int offset, int priority) {
+            this.platformId = platformId;
+            this.platformSpecificId = platformSpecificId;
+            this.offset = offset;
+            this.priority = priority;
+        }
     }
 }

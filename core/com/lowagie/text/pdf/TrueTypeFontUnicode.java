@@ -99,7 +99,7 @@ class TrueTypeFontUnicode extends TrueTypeFont implements Comparator{
             if (os_2 != null && os_2.fsType == 2)
                 throw new DocumentException(fileName + style + " cannot be embedded due to licensing restrictions.");
             // Sivan
-            if ((cmap31 == null && !fontSpecific) || (cmap10 == null && fontSpecific))
+            if (!hasMacintoshCmap)
                 directTextToByte=true;
                 //throw new DocumentException(fileName + " " + style + " does not contain an usable cmap.");
             if (fontSpecific) {
@@ -437,23 +437,16 @@ class TrueTypeFontUnicode extends TrueTypeFont implements Comparator{
      * @return an <CODE>int</CODE> array with {glyph index, width}
      */    
     public int[] getMetricsTT(int c) {
-        if (cmapExt != null)
-            return (int[])cmapExt.get(new Integer(c));
-        HashMap map = null;
-        if (fontSpecific)
-            map = cmap10;
-        else
-            map = cmap31;
-        if (map == null)
+        if (cmap == null)
             return null;
         if (fontSpecific) {
             if ((c & 0xffffff00) == 0 || (c & 0xffffff00) == 0xf000)
-                return (int[])map.get(new Integer(c & 0xff));
+                return (int[])cmap.get(new Integer(c & 0xff));
             else
                 return null;
         }
         else
-            return (int[])map.get(new Integer(c));
+            return (int[])cmap.get(new Integer(c));
     }
     
     /**
