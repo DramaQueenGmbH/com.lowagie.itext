@@ -948,7 +948,7 @@ class TrueTypeFont extends BaseFont {
                     cmap31 = readFormat4();
                     break;
                 case 6:
-                    cmapExt = readFormat6();
+                    cmap31 = readFormat6();
                     break;
                 case 10:
                     cmap31 = readFormat10();
